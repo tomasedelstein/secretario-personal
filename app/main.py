@@ -23,7 +23,6 @@ logger = logging.getLogger("main_server")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Inicialización de la base de datos y del programador al arrancar
     init_db()
     start_scheduler()
     logger.info("Base de datos inicializada y programador de recordatorios activo.")
@@ -31,11 +30,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Agente Secretario Personal", lifespan=lifespan)
 
-# Montar archivos estáticos y plantillas
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
-
-# --- Modelos de Petición REST ---
 
 class CommitmentCreateReq(BaseModel):
     title: str
@@ -58,8 +54,6 @@ class SettingsReq(BaseModel):
     webhook_token: Optional[str] = "secretario_verify_token_2026"
     authorized_phone: str
 
-# --- Rutas de la Interfaz Web ---
-
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
@@ -75,7 +69,6 @@ async def get_system_status():
 @app.get("/api/settings")
 async def get_settings():
     cfg = get_all_config()
-    # Ocultar parcialmente tokens sensibles
     token = cfg.get("access_token", "")
     masked_token = (token[:6] + "..." + token[-4:]) if len(token) > 10 else token
     
@@ -93,7 +86,6 @@ async def get_settings():
 
 @app.post("/api/settings")
 async def save_settings(req: SettingsReq):
-    # Si el usuario mandó un token enmascarado y ya existía uno guardado, no sobreescribir con la máscara
     if "..." in req.access_token:
         existing_token = get_config("access_token")
         if existing_token:
@@ -111,8 +103,6 @@ async def save_settings(req: SettingsReq):
     set_config("webhook_token", req.webhook_token.strip())
     set_config("authorized_phone", req.authorized_phone.strip())
     return {"status": "success", "message": "Configuración guardada correctamente."}
-
-# --- Rutas CRUD de Compromisos (REST) ---
 
 @app.get("/api/commitments")
 async def list_commitments(status: Optional[str] = None):
@@ -149,8 +139,6 @@ async def remove_commitment(cid: int):
         raise HTTPException(status_code=404, detail="Compromiso no encontrado")
     return {"status": "success"}
 
-# --- Webhook de WhatsApp (API Oficial de Meta) ---
-
 @app.get("/api/webhook")
 async def verify_webhook(
     hub_mode: Optional[str] = Query(None, alias="hub.mode"),
@@ -170,14 +158,12 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
     body_bytes = await request.body()
     signature = request.headers.get("x-hub-signature-256", "")
     
-    # Validar firma HMAC si está configurada
     if not verify_webhook_signature(body_bytes, signature):
         logger.warning("Firma de webhook no válida recibida.")
         raise HTTPException(status_code=401, detail="Firma no válida")
 
     payload = await request.json()
 
-    # Extraer mensajes estructurados de Meta
     try:
         entries = payload.get("entry", [])
         for entry in entries:
@@ -190,29 +176,29 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
                     from_number = msg.get("from")
                     msg_type = msg.get("type")
 
-                    # Filtrar únicamente mensajes de texto
                     if msg_type != "text":
                         continue
 
                     text_body = msg.get("text", {}).get("body", "")
 
-                    # Verificar teléfono autorizado
                     authorized_phone = get_config("authorized_phone")
                     if authorized_phone:
                         clean_auth = "".join(filter(str.isdigit, authorized_phone))
                         clean_from = "".join(filter(str.isdigit, from_number))
-                        if clean_auth not in clean_from and clean_from not in clean_auth:
+                        
+                        # Comparar últimos 8 dígitos para ser 100% compatible con 54911 vs 5411 en Argentina
+                        match_auth = (clean_auth[-8:] == clean_from[-8:]) if len(clean_auth) >= 8 and len(clean_from) >= 8 else (clean_auth in clean_from or clean_from in clean_auth)
+                        
+                        if not match_auth:
                             logger.warning(f"Mensaje ignorado de número no autorizado: {from_number}")
                             continue
 
-                    # Desduplicación por wamid de WhatsApp
                     if is_message_processed(msg_id):
                         logger.info(f"Mensaje repetido omitido: {msg_id}")
                         continue
                     
                     mark_message_processed(msg_id)
 
-                    # Procesar mensaje en segundo plano para responder rápido a Meta HTTP 200 OK
                     background_tasks.add_task(process_and_reply_whatsapp, from_number, text_body, msg_id)
 
     except Exception as e:
@@ -221,9 +207,6 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
     return {"status": "received"}
 
 async def process_and_reply_whatsapp(from_number: str, text_body: str, msg_id: str):
-    """
-    Procesa el texto en lenguaje natural, ejecuta la acción en la base de datos y responde por WhatsApp.
-    """
     parsed = process_message(text_body)
     intent = parsed.get("intent")
 
@@ -270,7 +253,7 @@ async def process_and_reply_whatsapp(from_number: str, text_body: str, msg_id: s
             reply_text = f"No tenés compromisos pendientes {day_label}."
         else:
             lines = ["📋 *Tus próximos compromisos:*"]
-            for c in commitments[:10]:  # Mostrar hasta 10
+            for c in commitments[:10]:
                 dt = datetime.fromisoformat(c["event_datetime"])
                 d_str = dt.strftime("%d/%m")
                 t_str = dt.strftime("%H:%M")
