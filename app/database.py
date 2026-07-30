@@ -1,4 +1,5 @@
 import sqlite3
+import os
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from app.config import DB_PATH, ARG_TZ
@@ -13,7 +14,6 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
     
-    # Tabla de compromisos
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS commitments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,7 +30,6 @@ def init_db():
     );
     """)
     
-    # Tabla de configuración cifrada del sistema
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS system_config (
         key TEXT PRIMARY KEY,
@@ -39,7 +38,6 @@ def init_db():
     );
     """)
     
-    # Tabla de mensajes procesados para desduplicar peticiones de WhatsApp
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS processed_messages (
         message_id TEXT PRIMARY KEY,
@@ -49,8 +47,6 @@ def init_db():
     
     conn.commit()
     conn.close()
-
-# --- Funciones de Configuración (Meta API & Teléfono Autorizado) ---
 
 def set_config(key: str, value: str):
     conn = get_db()
@@ -72,8 +68,20 @@ def get_config(key: str) -> str:
     row = cursor.fetchone()
     conn.close()
     if row and row['value']:
-        return decrypt_val(row['value'])
-    return ""
+        val = decrypt_val(row['value'])
+        if val:
+            return val
+            
+    # Fallback a variables de entorno para Render
+    env_map = {
+        "phone_number_id": os.getenv("PHONE_NUMBER_ID", ""),
+        "access_token": os.getenv("ACCESS_TOKEN", ""),
+        "authorized_phone": os.getenv("AUTHORIZED_PHONE", ""),
+        "app_id": os.getenv("APP_ID", ""),
+        "app_secret": os.getenv("APP_SECRET", ""),
+        "webhook_token": os.getenv("WEBHOOK_TOKEN", "secretario_verify_token_2026")
+    }
+    return env_map.get(key, "")
 
 def get_all_config() -> Dict[str, str]:
     conn = get_db()
@@ -84,9 +92,17 @@ def get_all_config() -> Dict[str, str]:
     res = {}
     for r in rows:
         res[r['key']] = decrypt_val(r['value']) if r['value'] else ""
+        
+    # Completar con env vars si faltan
+    if not res.get("phone_number_id"):
+        res["phone_number_id"] = os.getenv("PHONE_NUMBER_ID", "")
+    if not res.get("access_token"):
+        res["access_token"] = os.getenv("ACCESS_TOKEN", "")
+    if not res.get("authorized_phone"):
+        res["authorized_phone"] = os.getenv("AUTHORIZED_PHONE", "")
+    if not res.get("webhook_token"):
+        res["webhook_token"] = os.getenv("WEBHOOK_TOKEN", "secretario_verify_token_2026")
     return res
-
-# --- Funciones de Desduplicación de Mensajes ---
 
 def is_message_processed(msg_id: str) -> bool:
     if not msg_id:
@@ -111,8 +127,6 @@ def mark_message_processed(msg_id: str):
         pass
     conn.close()
 
-# --- CRUD de Compromisos ---
-
 def create_commitment(
     title: str,
     event_datetime_iso: str,
@@ -125,7 +139,6 @@ def create_commitment(
     cursor = conn.cursor()
     now = datetime.now(ARG_TZ).isoformat()
 
-    # Si no se pasó reminder_datetime_iso, calcularlo restando reminder_offset_minutes
     if not reminder_datetime_iso:
         dt = datetime.fromisoformat(event_datetime_iso)
         from datetime import timedelta
@@ -187,12 +200,10 @@ def update_commitment(
     new_offset = reminder_offset_minutes if reminder_offset_minutes is not None else existing['reminder_offset_minutes']
     new_status = status if status is not None else existing['status']
     
-    # Recalcular el horario del recordatorio si cambió la fecha o la anticipación
     from datetime import timedelta
     dt = datetime.fromisoformat(new_event_dt)
     new_rem_dt = (dt - timedelta(minutes=new_offset)).isoformat()
     
-    # Si cambió la fecha, la hora o el offset, reiniciamos el reminder_status a PENDING (salvo que esté CANCELLED o COMPLETED)
     new_rem_status = 'INVALIDATED' if new_status in ['CANCELLED', 'COMPLETED'] else 'PENDING'
     
     now = datetime.now(ARG_TZ).isoformat()
