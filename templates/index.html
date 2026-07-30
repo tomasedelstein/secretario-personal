@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mi Secretario Personal - Agenda WhatsApp & Web</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <div class="container">
+    <!-- Header -->
+    <header>
+      <div>
+        <h1>🗓️ Secretario Personal</h1>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 4px;">
+          Agenda inteligente por WhatsApp & Web (Buenos Aires, Argentina)
+        </p>
+      </div>
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <div id="systemStatusBadge" class="status-badge pending">
+          ⚙️ Cargando estado...
+        </div>
+        <div class="nav-buttons">
+          <button class="btn btn-primary" onclick="openCreateModal()">+ Nuevo Compromiso</button>
+          <button class="btn btn-secondary" onclick="openSettingsModal()">⚙️ Configuración WhatsApp</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Filtros -->
+    <div class="filters-bar">
+      <div class="filter-chip active" onclick="filterCommitments('ALL', this)">Todos</div>
+      <div class="filter-chip" onclick="filterCommitments('PENDING', this)">⏳ Pendientes</div>
+      <div class="filter-chip" onclick="filterCommitments('COMPLETED', this)">✔ Realizados</div>
+      <div class="filter-chip" onclick="filterCommitments('CANCELLED', this)">✖ Cancelados</div>
+    </div>
+
+    <!-- Grid de Compromisos -->
+    <div id="commitmentsContainer" class="commitments-grid">
+      <!-- Se carga dinámicamente con app.js -->
+    </div>
+  </div>
+
+  <!-- Modal Crear / Editar Compromiso -->
+  <div id="commitmentModal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modalTitle">Nuevo Compromiso</h2>
+        <button class="close-btn" onclick="closeModal('commitmentModal')">&times;</button>
+      </div>
+      <form id="commitmentForm" onsubmit="saveCommitment(event)">
+        <input type="hidden" id="commitmentId">
+        
+        <div class="form-group">
+          <label for="formTitle">Título del compromiso *</label>
+          <input type="text" id="formTitle" class="form-control" placeholder="Ej: Dentista, Pádel con amigos" required>
+        </div>
+
+        <div class="form-group">
+          <label for="formCategory">Categoría</label>
+          <select id="formCategory" class="form-control">
+            <option value="General">General</option>
+            <option value="Salud">Salud</option>
+            <option value="Deporte">Deporte</option>
+            <option value="Trabajo">Trabajo</option>
+            <option value="Personal">Personal</option>
+          </select>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label for="formDate">Fecha *</label>
+            <input type="date" id="formDate" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label for="formTime">Horario (24hs) *</label>
+            <input type="time" id="formTime" class="form-control" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="formOffset">Anticipación del aviso por WhatsApp</label>
+          <select id="formOffset" class="form-control">
+            <option value="30">30 minutos antes</option>
+            <option value="60" selected>1 hora antes (Predeterminado)</option>
+            <option value="120">2 horas antes</option>
+            <option value="1440">1 día antes</option>
+          </select>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px;">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('commitmentModal')">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar Compromiso</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Seguro de Configuración de WhatsApp -->
+  <div id="settingsModal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>🔒 Configuración Segura de WhatsApp (Meta API)</h2>
+        <button class="close-btn" onclick="closeModal('settingsModal')">&times;</button>
+      </div>
+      <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 16px;">
+        Ingresá tus credenciales oficiales de la plataforma Meta for Developers. Se guardarán encriptadas localmente en la base de datos de tu servidor.
+      </p>
+      <form id="settingsForm" onsubmit="saveSettings(event)">
+        
+        <div class="form-group">
+          <label for="cfgAuthorizedPhone">Tu número de WhatsApp Autorizado (con código de país sin +)</label>
+          <input type="text" id="cfgAuthorizedPhone" class="form-control" placeholder="Ej: 5491112345678" required>
+        </div>
+
+        <div class="form-group">
+          <label for="cfgPhoneNumberId">Phone Number ID (ID del número de teléfono en Meta)</label>
+          <input type="text" id="cfgPhoneNumberId" class="form-control" placeholder="Ej: 102938475610293" required>
+        </div>
+
+        <div class="form-group">
+          <label for="cfgAccessToken">Access Token (Token de acceso de Meta)</label>
+          <input type="password" id="cfgAccessToken" class="form-control" placeholder="EAAB..." required>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label for="cfgAppId">Meta App ID</label>
+            <input type="text" id="cfgAppId" class="form-control" placeholder="Opcional">
+          </div>
+          <div class="form-group">
+            <label for="cfgAppSecret">Meta App Secret</label>
+            <input type="password" id="cfgAppSecret" class="form-control" placeholder="Opcional">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="cfgWebhookToken">Webhook Verify Token</label>
+          <input type="text" id="cfgWebhookToken" class="form-control" value="secretario_verify_token_2026" required>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px;">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('settingsModal')">Cerrar</button>
+          <button type="submit" class="btn btn-primary">Guardar Credenciales Cifradas</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
